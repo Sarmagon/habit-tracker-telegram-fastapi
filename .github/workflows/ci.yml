@@ -1,0 +1,38 @@
+name: Checks
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: habits
+          POSTGRES_PASSWORD: ci-test-only-password
+          POSTGRES_DB: habits
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U habits -d habits"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install poetry==2.5.1
+      - run: poetry install --no-root
+      - run: poetry check --lock
+      - run: poetry run ruff check .
+      - run: poetry run ruff format --check .
+      - run: poetry run pytest -q
+      - name: PostgreSQL migration checks
+        env:
+          DATABASE_URL: postgresql+psycopg://habits:ci-test-only-password@localhost/habits
+        run: |
+          poetry run alembic upgrade head
+          poetry run alembic check
+          POSTGRES_TEST_URL="$DATABASE_URL" poetry run pytest -q tests/test_postgresql.py
+          poetry run alembic downgrade base
+          poetry run alembic upgrade head
+      - run: docker compose config --quiet
+      - run: docker compose build

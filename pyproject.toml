@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "habit-tracker"
+version = "1.0.0"
+description = "Telegram habit tracker with a FastAPI backend"
+authors = ["Sarmagon"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.142"
+uvicorn = {version = "^0.54", extras = ["standard"]}
+sqlalchemy = "^2.0"
+psycopg = {version = "^3.3", extras = ["binary"]}
+alembic = "^1.20"
+pyTelegramBotAPI = "^4.37"
+httpx = "^0.28"
+pyjwt = "^2.11"
+pwdlib = {version = "^0.3", extras = ["argon2"]}
+pydantic-settings = "^2.15"
+tzdata = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1"
+ruff = "^0.16"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
