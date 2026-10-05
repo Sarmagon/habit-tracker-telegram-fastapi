@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     bot_service_secret: str = ""
     bot_service_secret_hash: str = ""
+    bot_token_database_path: str = "/data/tokens.sqlite3"
+    bot_token_encryption_key: str = ""
     access_token_minutes: int = Field(default=15, ge=1, le=1440)
     habit_completion_limit: int = Field(default=21, ge=1, le=10000)
     notification_poll_seconds: int = Field(default=15, ge=1, le=300)

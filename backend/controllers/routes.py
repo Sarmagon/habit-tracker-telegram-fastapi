@@ -30,7 +30,15 @@ from common.config import Settings
 
 router = APIRouter()
 DatabaseSession = Annotated[Session, Depends(open_database_session)]
-bearer_scheme = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="UserAccessToken",
+    bearerFormat="JWT",
+    description=(
+        "JWT пользователя. Получите токен через доверенного бота или CLI. "
+        "В Authorize вставьте только JWT, без префикса Bearer."
+    ),
+)
 
 
 def load_security_settings():

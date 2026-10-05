@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from cryptography.fernet import Fernet
+
 from bot.models.api_client import BackendClient
 from bot.presenters.habit_presenter import HabitPresenter
 from bot.views.messages import create_habit_keyboard
@@ -54,8 +56,13 @@ def test_mark_callback_carries_original_date():
     assert keyboard["inline_keyboard"][0][0]["callback_data"] == "mark:42:1:2026-10-02"
 
 
-def test_token_cache_and_unauthorized_refresh():
-    client = BackendClient(Settings())
+def test_token_cache_and_unauthorized_refresh(tmp_path):
+    client = BackendClient(
+        Settings(
+            bot_token_database_path=str(tmp_path / "tokens.sqlite3"),
+            bot_token_encryption_key=Fernet.generate_key().decode(),
+        )
+    )
     first_token_response = Mock()
     first_token_response.json.return_value = {
         "access_token": "first",

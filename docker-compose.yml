@@ -5,6 +5,7 @@ services:
     command: ["python", "scripts/initialize_secrets.py"]
     volumes:
       - runtime_secrets:/secrets
+      - bot_data:/bot-data
     restart: "no"
 
   database:
@@ -55,8 +56,10 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       BACKEND_URL: http://backend:8000
+      BOT_TOKEN_DATABASE_PATH: /data/tokens.sqlite3
     volumes:
       - runtime_secrets:/secrets:ro
+      - bot_data:/data
     depends_on:
       backend:
         condition: service_healthy
@@ -71,4 +74,5 @@ services:
 
 volumes:
   postgres_data:
+  bot_data:
   runtime_secrets:

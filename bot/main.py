@@ -13,9 +13,9 @@ from common.config import Settings
 
 def run_telegram_bot():
     settings = Settings()
-    settings.bot_service_secret = json.loads(Path(settings.secret_file).read_text())[
-        "bot_service_secret"
-    ]
+    runtime_secrets = json.loads(Path(settings.secret_file).read_text(encoding="utf-8"))
+    settings.bot_service_secret = runtime_secrets["bot_service_secret"]
+    settings.bot_token_encryption_key = runtime_secrets["bot_token_encryption_key"]
     # Never print the token or HTTP exceptions containing Telegram URLs.
     if not settings.telegram_bot_token or settings.telegram_bot_token.startswith(
         "replace"
@@ -42,12 +42,15 @@ def run_telegram_bot():
             time.sleep(30)
 
     threading.Thread(target=update_heartbeat, daemon=True).start()
-    telegram_bot.infinity_polling(
-        skip_pending=False,
-        timeout=20,
-        long_polling_timeout=20,
-        allowed_updates=["message", "callback_query"],
-    )
+    try:
+        telegram_bot.infinity_polling(
+            skip_pending=False,
+            timeout=20,
+            long_polling_timeout=20,
+            allowed_updates=["message", "callback_query"],
+        )
+    finally:
+        backend_client.close_client()
 
 
 if __name__ == "__main__":

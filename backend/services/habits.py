@@ -101,9 +101,9 @@ def list_habits(
 def mark_completion(
     database_session, user, habit_identifier, completed, record_date, completion_limit
 ):
+    habit = get_owned_habit(database_session, user.identifier, habit_identifier)
     if record_date != get_local_date(user):
         raise HTTPException(409, "Отмечать можно только текущий день")
-    habit = get_owned_habit(database_session, user.identifier, habit_identifier)
     ensure_daily_records(database_session, user, completion_limit)
     record = database_session.scalar(
         select(DailyRecord).where(
