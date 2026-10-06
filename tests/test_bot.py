@@ -1,6 +1,8 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
 from cryptography.fernet import Fernet
 
 from bot.models.api_client import BackendClient
@@ -85,3 +87,91 @@ def test_token_cache_and_unauthorized_refresh(tmp_path):
     assert client.http_client.request.call_args.kwargs["headers"] == {
         "Authorization": "Bearer second"
     }
+
+
+def test_main_menu_buttons_and_context_today_complete_creation():
+    telegram_bot = Mock()
+    backend_client = Mock()
+    backend_client.send_request.side_effect = [
+        {"timezone_name": "Europe/Moscow"},
+        {},
+        [],
+    ]
+    presenter = HabitPresenter(telegram_bot, backend_client)
+    for message_text in [
+        "Добавить привычку",
+        "Читать",
+        "Пропустить",
+        "Сегодня",
+        "Без ограничения",
+    ]:
+        presenter.receive_message(create_message(message_text))
+    creation_call = backend_client.send_request.call_args_list[1]
+    assert creation_call.args[:3] == (123, "POST", "/habits")
+    assert creation_call.args[3]["end_date"] is None
+    assert creation_call.args[3]["description"] == ""
+    assert presenter.conversations == {}
+    keyboard = json.loads(
+        telegram_bot.send_message.call_args.kwargs["reply_markup"].to_json()
+    )
+    assert keyboard["is_persistent"] is True
+    assert keyboard["keyboard"][0][0]["text"] == "Сегодня"
+
+
+@pytest.mark.parametrize("invalid_date", ["не дата", "2026-02-30"])
+def test_invalid_date_keeps_dialog_and_shows_russian_hint(invalid_date):
+    telegram_bot = Mock()
+    backend_client = Mock()
+    presenter = HabitPresenter(telegram_bot, backend_client)
+    for message_text in ["/add", "Читать", "-", invalid_date]:
+        presenter.receive_message(create_message(message_text))
+    assert presenter.conversations[123]["step"] == 2
+    assert "Не удалось распознать дату" in telegram_bot.send_message.call_args.args[1]
+    backend_client.send_request.assert_not_called()
+
+
+def test_today_menu_outside_dialog_reads_habits():
+    backend_client = Mock()
+    backend_client.send_request.return_value = []
+    presenter = HabitPresenter(Mock(), backend_client)
+    presenter.receive_message(create_message("Сегодня"))
+    backend_client.send_request.assert_called_once_with(
+        123, "GET", "/habits?include_archive=false"
+    )
+
+
+def test_cancel_button_discards_incomplete_habit():
+    backend_client = Mock()
+    presenter = HabitPresenter(Mock(), backend_client)
+    for message_text in ["Добавить привычку", "Читать", "Отменить"]:
+        presenter.receive_message(create_message(message_text))
+    assert presenter.conversations == {}
+    backend_client.send_request.assert_not_called()
+
+
+def test_invalid_reminder_time_keeps_dialog_without_technical_error():
+    telegram_bot = Mock()
+    backend_client = Mock()
+    presenter = HabitPresenter(telegram_bot, backend_client)
+    for message_text in ["Напоминания", "25:70"]:
+        presenter.receive_message(create_message(message_text))
+    assert presenter.conversations[123]["step"] == 0
+    assert "Введите время" in telegram_bot.send_message.call_args.args[1]
+    backend_client.send_request.assert_not_called()
+
+
+def test_reminder_button_opens_current_habits():
+    backend_client = Mock()
+    backend_client.send_request.return_value = []
+    presenter = HabitPresenter(Mock(), backend_client)
+    presenter.receive_callback(
+        SimpleNamespace(
+            id="callback",
+            data="menu:today",
+            from_user=SimpleNamespace(id=123),
+            message=SimpleNamespace(chat=SimpleNamespace(id=123, type="private")),
+        )
+    )
+    backend_client.send_request.assert_called_once_with(
+        123, "GET", "/habits?include_archive=false"
+    )

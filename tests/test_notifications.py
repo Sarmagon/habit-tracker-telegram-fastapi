@@ -72,3 +72,8 @@ def test_long_reminder_is_split_into_telegram_sized_messages(monkeypatch):
     assert all(
         len(call.kwargs["json"]["text"]) < 4096 for call in sender.call_args_list
     )
+    assert all(
+        call.kwargs["json"]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+        == "menu:today"
+        for call in sender.call_args_list
+    )

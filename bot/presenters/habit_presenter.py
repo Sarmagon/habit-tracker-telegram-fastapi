@@ -5,10 +5,24 @@ from zoneinfo import ZoneInfo
 import httpx
 from telebot import types
 
-from bot.views.messages import create_habit_keyboard, format_habit_message
+from bot.views.messages import (
+    create_dialog_keyboard,
+    create_habit_keyboard,
+    create_main_keyboard,
+    format_habit_message,
+)
+
+MENU_COMMANDS = {
+    "Сегодня": "/today",
+    "Добавить привычку": "/add",
+    "Все привычки": "/all",
+    "Напоминания": "/reminder",
+    "Помощь": "/help",
+    "Отменить": "/cancel",
+}
 
 HELP_MESSAGE = (
-    "Я помогу следить за привычками.\n"
+    "Я помогу следить за привычками. Выберите действие кнопками внизу.\n"
     "/today — привычки на сегодня\n/add — добавить привычку\n"
     "/all — все привычки, включая будущие и освоенные\n"
     "/reminder — время, часовой пояс и включение напоминаний\n"
@@ -25,6 +39,28 @@ class HabitPresenter:
         self.conversations = {}
 
     def send_message(self, telegram_identifier, message, keyboard=None):
+        if keyboard is None:
+            conversation = self.conversations.get(telegram_identifier)
+            if conversation:
+                habit_buttons = {
+                    0: ("Отменить",),
+                    1: ("Пропустить", "Отменить"),
+                    2: ("Сегодня", "Отменить"),
+                    3: ("Без ограничения", "Отменить"),
+                }
+                reminder_buttons = {
+                    0: ("Отменить",),
+                    1: ("Europe/Moscow", "Asia/Yekaterinburg", "Отменить"),
+                    2: ("Да", "Нет", "Отменить"),
+                }
+                button_labels = (
+                    habit_buttons
+                    if conversation["kind"] == "habit"
+                    else reminder_buttons
+                )[conversation["step"]]
+                keyboard = create_dialog_keyboard(*button_labels)
+            else:
+                keyboard = create_main_keyboard()
         self.telegram_bot.send_message(
             telegram_identifier, message, reply_markup=keyboard
         )
@@ -51,7 +87,7 @@ class HabitPresenter:
         )
         if not habits:
             self.send_message(
-                telegram_identifier, "Список пуст. Добавьте привычку: /add"
+                telegram_identifier, "Список пуст. Нажмите «Добавить привычку»."
             )
         for habit in habits:
             self.send_message(
@@ -69,7 +105,10 @@ class HabitPresenter:
             "expires": time.monotonic() + 900,
         }
         self.send_message(
-            telegram_identifier, "Введите название привычки (до 120 символов)."
+            telegram_identifier,
+            "Введите новое название привычки (до 120 символов)."
+            if habit_identifier
+            else "Введите название привычки (до 120 символов).",
         )
 
     def start_reminder_dialog(self, telegram_identifier):
@@ -88,6 +127,16 @@ class HabitPresenter:
             return
         telegram_identifier = message.from_user.id
         message_text = (message.text or "").strip()
+        conversation = self.conversations.get(telegram_identifier)
+        selecting_today = (
+            conversation
+            and conversation["kind"] == "habit"
+            and conversation["step"] == 2
+            and conversation["expires"] >= time.monotonic()
+            and message_text == "Сегодня"
+        )
+        if not selecting_today:
+            message_text = MENU_COMMANDS.get(message_text, message_text)
         try:
             if message_text.startswith("/"):
                 command = message_text.split()[0].split("@")[0]
@@ -108,7 +157,13 @@ class HabitPresenter:
             conversation = self.conversations.get(telegram_identifier)
             if not conversation or conversation["expires"] < time.monotonic():
                 self.conversations.pop(telegram_identifier, None)
-                self.send_message(telegram_identifier, "Начните с /add или /reminder.")
+                self.send_message(
+                    telegram_identifier,
+                    "Выберите действие в меню. "
+                    "Для создания нажмите «Добавить привычку»."
+                    if not conversation
+                    else "Время ввода истекло. Начните заново через меню.",
+                )
                 return
             if conversation["kind"] == "habit":
                 self.advance_habit_dialog(
@@ -135,8 +190,10 @@ class HabitPresenter:
         elif step == 1:
             if len(message_text) > 1000:
                 raise ValueError("Описание слишком длинное.")
-            payload["description"] = "" if message_text == "-" else message_text
-            prompt = "Дата начала: YYYY-MM-DD, или сегодня."
+            payload["description"] = (
+                "" if message_text.lower() in {"-", "пропустить"} else message_text
+            )
+            prompt = "Введите дату начала в формате ГГГГ-ММ-ДД или нажмите «Сегодня»."
         elif step == 2:
             if message_text.lower() == "сегодня":
                 profile = self.backend_client.send_request(
@@ -145,15 +202,16 @@ class HabitPresenter:
                 message_text = (
                     datetime.now(ZoneInfo(profile["timezone_name"])).date().isoformat()
                 )
-            payload["start_date"] = (
-                datetime.strptime(message_text, "%Y-%m-%d").date().isoformat()
+            payload["start_date"] = self.parse_habit_date(message_text)
+            prompt = (
+                "Введите дату окончания в формате ГГГГ-ММ-ДД "
+                "или нажмите «Без ограничения». Можно отправить только знак -."
             )
-            prompt = "Дата окончания: YYYY-MM-DD, или - без ограничения."
         else:
             payload["end_date"] = (
                 None
-                if message_text == "-"
-                else datetime.strptime(message_text, "%Y-%m-%d").date().isoformat()
+                if message_text.lower() in {"-", "без ограничения", "- без ограничения"}
+                else self.parse_habit_date(message_text)
             )
             if payload["end_date"] and payload["end_date"] < payload["start_date"]:
                 raise ValueError("Дата окончания раньше начала. Введите её заново.")
@@ -170,14 +228,38 @@ class HabitPresenter:
             self.display_habits(telegram_identifier, include_archive=True)
             return
         conversation["step"] += 1
-        self.send_message(telegram_identifier, prompt)
+        keyboard_labels = {
+            1: ("Пропустить", "Отменить"),
+            2: ("Сегодня", "Отменить"),
+            3: ("Без ограничения", "Отменить"),
+        }
+        self.send_message(
+            telegram_identifier,
+            prompt,
+            create_dialog_keyboard(*keyboard_labels[conversation["step"]]),
+        )
+
+    def parse_habit_date(self, message_text):
+        try:
+            return datetime.strptime(message_text, "%Y-%m-%d").date().isoformat()
+        except ValueError as error:
+            raise ValueError(
+                "Не удалось распознать дату. Введите существующую дату "
+                "в формате ГГГГ-ММ-ДД, например 2026-10-06. "
+                "Для окончания без ограничения нажмите «Без ограничения»."
+            ) from error
 
     def advance_reminder_dialog(self, telegram_identifier, message_text, conversation):
         payload = conversation["payload"]
         if conversation["step"] == 0:
-            payload["reminder_time"] = (
-                datetime.strptime(message_text, "%H:%M").time().isoformat()
-            )
+            try:
+                payload["reminder_time"] = (
+                    datetime.strptime(message_text, "%H:%M").time().isoformat()
+                )
+            except ValueError as error:
+                raise ValueError(
+                    "Введите время в формате ЧЧ:ММ от 00:00 до 23:59, например 20:00."
+                ) from error
             prompt = "Часовой пояс IANA, например Europe/Moscow или Asia/Yekaterinburg."
         elif conversation["step"] == 1:
             try:
@@ -199,7 +281,15 @@ class HabitPresenter:
             self.send_message(telegram_identifier, "Настройки напоминаний сохранены.")
             return
         conversation["step"] += 1
-        self.send_message(telegram_identifier, prompt)
+        self.send_message(
+            telegram_identifier,
+            prompt,
+            create_dialog_keyboard(
+                *("Europe/Moscow", "Asia/Yekaterinburg", "Отменить")
+                if conversation["step"] == 1
+                else ("Да", "Нет", "Отменить")
+            ),
+        )
 
     def receive_callback(self, callback):
         if callback.message is None or callback.message.chat.type != "private":
@@ -209,6 +299,11 @@ class HabitPresenter:
             return
         self.telegram_bot.answer_callback_query(callback.id)
         try:
+            if callback.data == "menu:today":
+                self.conversations.pop(telegram_identifier, None)
+                self.send_message(telegram_identifier, "Ваши привычки на сегодня:")
+                self.display_habits(telegram_identifier)
+                return
             parts = callback.data.split(":")
             action, habit_identifier = parts[:2]
             habit_identifier = int(habit_identifier)
@@ -230,9 +325,16 @@ class HabitPresenter:
                         callback_data=f"confirm:{habit_identifier}",
                     )
                 )
+                keyboard.add(
+                    types.InlineKeyboardButton(
+                        "Оставить привычку", callback_data=f"keep:{habit_identifier}"
+                    )
+                )
                 self.send_message(
                     telegram_identifier, "Удалить привычку и её историю?", keyboard
                 )
+            elif action == "keep":
+                self.send_message(telegram_identifier, "Удаление отменено.")
             elif action == "confirm":
                 self.backend_client.send_request(
                     telegram_identifier, "DELETE", f"/habits/{habit_identifier}"

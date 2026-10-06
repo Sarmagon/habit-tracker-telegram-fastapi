@@ -1,6 +1,36 @@
 from telebot import types
 
 
+def create_main_keyboard():
+    return create_dialog_keyboard(
+        "Сегодня", "Добавить привычку", "Все привычки", "Напоминания", "Помощь"
+    )
+
+
+def create_dialog_keyboard(*button_labels):
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
+    for position in range(0, len(button_labels), 2):
+        keyboard.row(
+            *(
+                types.KeyboardButton(label)
+                for label in button_labels[position : position + 2]
+            )
+        )
+    return keyboard
+
+
+def create_bot_commands():
+    return [
+        types.BotCommand("start", "Открыть главное меню"),
+        types.BotCommand("today", "Привычки на сегодня"),
+        types.BotCommand("add", "Добавить привычку"),
+        types.BotCommand("all", "Все привычки"),
+        types.BotCommand("reminder", "Настроить напоминания"),
+        types.BotCommand("cancel", "Отменить ввод"),
+        types.BotCommand("help", "Помощь"),
+    ]
+
+
 def create_habit_keyboard(habit):
     keyboard = types.InlineKeyboardMarkup()
     habit_identifier = habit["identifier"]

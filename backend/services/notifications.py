@@ -35,12 +35,27 @@ def deliver_reminder(user, habits, telegram_token):
 
         current_chunk += habit_line
 
-    message_chunks.append(current_chunk + "Откройте /today")
+    message_chunks.append(
+        current_chunk + "Нажмите «Открыть привычки», чтобы отметить их."
+    )
 
     for message_text in message_chunks:
         response = httpx.post(
             f"https://api.telegram.org/bot{telegram_token}/sendMessage",
-            json={"chat_id": user.telegram_identifier, "text": message_text},
+            json={
+                "chat_id": user.telegram_identifier,
+                "text": message_text,
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "Открыть привычки",
+                                "callback_data": "menu:today",
+                            }
+                        ]
+                    ]
+                },
+            },
             timeout=10,
         )
 

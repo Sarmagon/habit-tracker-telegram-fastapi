@@ -8,6 +8,7 @@ import telebot
 
 from bot.models.api_client import BackendClient
 from bot.presenters.habit_presenter import HabitPresenter
+from bot.views.messages import create_bot_commands
 from common.config import Settings
 
 
@@ -33,9 +34,16 @@ def run_telegram_bot():
     )
 
     def update_heartbeat():
+        commands_registered = False
         while True:
             try:
                 telegram_bot.get_me()
+                if not commands_registered:
+                    telegram_bot.set_my_commands(create_bot_commands())
+                    telegram_bot.set_chat_menu_button(
+                        menu_button=telebot.types.MenuButtonCommands()
+                    )
+                    commands_registered = True
                 Path("/tmp/bot-heartbeat").touch()
             except Exception:
                 pass
