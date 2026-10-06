@@ -96,6 +96,7 @@ def run_notification_tick(settings, current_time=None, sender=deliver_reminder):
 
             if (
                 user.reminders_enabled
+                and any(habit.completed is None for habit in habits)
                 and local_time.time() >= user.reminder_time
                 and user.last_reminder_date != local_time.date()
                 and user.next_reminder_attempt <= int(current_time.timestamp())

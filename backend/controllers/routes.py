@@ -178,8 +178,15 @@ def read_habit_history(
 def update_reminder(
     payload: ReminderInput, database_session: DatabaseSession, user: CurrentUser
 ):
+    settings_changed = any(
+        getattr(user, field_name) != field_value
+        for field_name, field_value in payload.model_dump().items()
+    )
     for field_name, field_value in payload.model_dump().items():
         setattr(user, field_name, field_value)
+    if settings_changed:
+        user.last_reminder_date = None
+        user.next_reminder_attempt = 0
     database_session.commit()
     return payload
 
